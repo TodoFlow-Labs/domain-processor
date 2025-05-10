@@ -1,7 +1,46 @@
 .PHONY: run
 
 run:
-	 go run cmd/main.go \
-  --nats-url "$NATS_URL" \
-  --db-url "$DATABASE_URL" \
-  --log-level debug 
+	go run cmd/main.go --config=config.dev.yaml
+
+
+.PHONY: fmt
+fmt:
+	go fmt ./...
+	go mod tidy
+
+.PHONY: test
+test:
+	@echo "Running tests..."
+	go test ./... -v
+	@echo "Tests completed."
+
+.PHONY: update
+update:
+	@echo "Updating dependencies..."
+	go get -u ./...
+	@echo "Dependencies updated."
+
+.PHONY: push
+push:
+	@echo "Running go fmt..."
+	go fmt ./...
+
+	@echo "Running go test..."
+	go test ./... -v
+	@if [ $$? -ne 0 ]; then \
+		echo "❌ Tests failed. Aborting push."; \
+		exit 1; \
+	fi
+
+	@echo "✅ Tests passed."
+	@echo "Adding changes to git..."
+	git add .
+
+	@echo "Committing changes..."
+	git commit -m "Update shared-dtos" || echo "No changes to commit."
+
+	@echo "Pushing changes to remote repository..."
+	git push origin main
+
+	@echo "✅ All tasks completed successfully."

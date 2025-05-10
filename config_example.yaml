@@ -1,0 +1,5 @@
+
+nats-url: "nats://"
+database-url: "postgresql://"
+log-level: "debug"
+metrics-address: ":9090"
