@@ -23,6 +23,11 @@ update:
 
 .PHONY: push
 push:
+	@if [ -z "$(COMMIT_MSG)" ]; then \
+		echo "❌ COMMIT_MSG is required. Usage: make push COMMIT_MSG=\"your message\""; \
+		exit 1; \
+	fi
+
 	@echo "Running go fmt..."
 	go fmt ./...
 
@@ -37,8 +42,8 @@ push:
 	@echo "Adding changes to git..."
 	git add .
 
-	@echo "Committing changes..."
-	git commit -m "Update shared-dtos" || echo "No changes to commit."
+	@echo "Committing changes with message: $(COMMIT_MSG)"
+	git commit -m "$(COMMIT_MSG)" || echo "No changes to commit."
 
 	@echo "Pushing changes to remote repository..."
 	git push origin main
