@@ -21,7 +21,8 @@ type mockDB struct {
 }
 
 func (m *mockDB) Exec(ctx context.Context, query string, args ...any) (any, error) {
-	return m.Called(ctx, query, args).Get(0), m.Called(ctx, query, args).Error(1)
+	callArgs := m.Called(ctx, query, args)
+	return callArgs.Get(0), callArgs.Error(1)
 }
 
 func (m *mockDB) QueryRow(ctx context.Context, query string, args ...any) processor.RowScanner {
@@ -96,7 +97,6 @@ func TestHandleCreate_Success(t *testing.T) {
 
 	h.HandleCreate(cmd)
 
-	// Assert message published
 	sub, err := js.PullSubscribe("todo.events", "test-create")
 	assert.NoError(t, err)
 	msgs, err := sub.Fetch(1, nats.MaxWait(time.Second))

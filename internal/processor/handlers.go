@@ -1,4 +1,3 @@
-// internal/processor/handlers.go
 package processor
 
 import (
@@ -58,11 +57,8 @@ func (p *Processor) HandleCreate(cmd dto.CreateTodoCommand) {
 		return
 	}
 
-	dat, _ := json.Marshal(evt)
 	p.logger.Debug().Msgf("Todo created: %s", evt.ID)
-	if _, err := p.js.Publish("todo.events", dat); err != nil {
-		p.logger.Error().Err(err).Msg("publish create event failed")
-	}
+	p.publishEvent("todo.events", evt)
 }
 
 func (p *Processor) HandleUpdate(cmd dto.UpdateTodoCommand) {
@@ -98,21 +94,19 @@ func (p *Processor) HandleUpdate(cmd dto.UpdateTodoCommand) {
 		Tags:        derefStringSlice(cmd.Tags),
 	}
 
-	dat, _ := json.Marshal(evt)
 	p.logger.Debug().Msgf("Todo updated: %s", evt.ID)
-	if _, err := p.js.Publish("todo.events", dat); err != nil {
-		p.logger.Error().Err(err).Msg("publish update event failed")
-	}
+	p.publishEvent("todo.events", evt)
 }
 
 func (p *Processor) HandleDelete(cmd dto.DeleteTodoCommand) {
 	_, err := p.db.Exec(context.Background(),
-		`DELETE FROM todos.todo WHERE id=$1 AND user_id=$2`, cmd.ID, cmd.UserID,
+		`DELETE FROM todos.todo WHERE id = $1 AND user_id = $2`, cmd.ID, cmd.UserID,
 	)
 	if err != nil {
 		p.logger.Error().Err(err).Msg("db delete failed")
 		return
 	}
+
 	evt := dto.TodoDeletedEvent{
 		BaseEvent: dto.BaseEvent{
 			Type:      dto.TodoDeletedEvt,
@@ -121,10 +115,19 @@ func (p *Processor) HandleDelete(cmd dto.DeleteTodoCommand) {
 			Timestamp: time.Now(),
 		},
 	}
-	dat, _ := json.Marshal(evt)
+
 	p.logger.Debug().Msgf("Todo deleted: %s", evt.ID)
-	if _, err := p.js.Publish("todo.events", dat); err != nil {
-		p.logger.Error().Err(err).Msg("publish delete event failed")
+	p.publishEvent("todo.events", evt)
+}
+
+func (p *Processor) publishEvent(subject string, evt any) {
+	data, err := json.Marshal(evt)
+	if err != nil {
+		p.logger.Error().Err(err).Msg("failed to serialize event")
+		return
+	}
+	if _, err := p.js.Publish(subject, data); err != nil {
+		p.logger.Error().Err(err).Str("subject", subject).Msg("failed to publish event")
 	}
 }
 
