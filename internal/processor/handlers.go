@@ -1,3 +1,4 @@
+// internal/processor/handler.go
 package processor
 
 import (
@@ -58,7 +59,6 @@ func (p *Processor) HandleUpdate(cmd dto.UpdateTodoCommand) {
 			ID:        cmd.ID,
 			Timestamp: time.Now(),
 		},
-
 		Title:     derefString(cmd.Title),
 		Completed: derefBool(cmd.Completed),
 	}
@@ -84,7 +84,6 @@ func (p *Processor) HandleDelete(cmd dto.DeleteTodoCommand) {
 			Timestamp: time.Now(),
 		},
 	}
-
 	dat, _ := json.Marshal(evt)
 	p.logger.Debug().Msgf("Todo deleted: %s", evt.ID)
 	if _, err := p.js.Publish("todo.events", dat); err != nil {
