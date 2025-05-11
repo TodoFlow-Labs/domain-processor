@@ -1,4 +1,4 @@
-// internal/processor/handler.go
+// internal/processor/handlers.go
 package processor
 
 import (
@@ -6,19 +6,33 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
 	"github.com/todoflow-labs/shared-dtos/dto"
 	"github.com/todoflow-labs/shared-dtos/logging"
 )
 
+type CommandHandler interface {
+	HandleCreate(dto.CreateTodoCommand)
+	HandleUpdate(dto.UpdateTodoCommand)
+	HandleDelete(dto.DeleteTodoCommand)
+}
+
+type DBExecutor interface {
+	Exec(context.Context, string, ...any) (any, error)
+	QueryRow(context.Context, string, ...any) RowScanner
+}
+
+type RowScanner interface {
+	Scan(dest ...any) error
+}
+
 type Processor struct {
 	js     nats.JetStreamContext
-	db     *pgxpool.Pool
+	db     DBExecutor
 	logger *logging.Logger
 }
 
-func NewProcessor(js nats.JetStreamContext, db *pgxpool.Pool, logger *logging.Logger) *Processor {
+func NewProcessor(js nats.JetStreamContext, db DBExecutor, logger *logging.Logger) *Processor {
 	return &Processor{js: js, db: db, logger: logger}
 }
 

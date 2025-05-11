@@ -11,7 +11,7 @@ import (
 	"github.com/todoflow-labs/shared-dtos/logging"
 )
 
-func SubscribeToCommands(js nats.JetStreamContext, handler *processor.Processor, logger *logging.Logger) {
+func SubscribeToCommands(js nats.JetStreamContext, handler processor.CommandHandler, logger *logging.Logger) {
 	_, err := js.Subscribe("todo.commands", func(m *nats.Msg) {
 		var base dto.BaseCommand
 		if err := json.Unmarshal(m.Data, &base); err != nil {

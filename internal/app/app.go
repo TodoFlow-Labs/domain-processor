@@ -1,3 +1,4 @@
+// internal/app/app.go
 package app
 
 import (
@@ -59,9 +60,22 @@ func Run() {
 		logger.Debug().Msgf("stream %s ensured", stream.Name)
 	}
 
-	h := processor.NewProcessor(js, db, logger)
+	h := processor.NewProcessor(js, dbWrapper{db}, logger)
 	subscriber.SubscribeToCommands(js, h, logger)
 
 	logger.Info().Msg("domain-processor is running")
 	select {}
+}
+
+// --- Adapters for interfaces ---
+type dbWrapper struct {
+	*pgxpool.Pool
+}
+
+func (d dbWrapper) Exec(ctx context.Context, sql string, args ...interface{}) (interface{}, error) {
+	return d.Pool.Exec(ctx, sql, args...)
+}
+
+func (d dbWrapper) QueryRow(ctx context.Context, sql string, args ...interface{}) processor.RowScanner {
+	return d.Pool.QueryRow(ctx, sql, args...)
 }
