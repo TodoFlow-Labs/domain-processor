@@ -46,5 +46,13 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	// Validate
+	if cfg.NATSURL == "" {
+		return nil, fmt.Errorf("nats-url must be set")
+	}
+	if cfg.DatabaseURL == "" {
+		return nil, fmt.Errorf("database-url must be set")
+	}
+
 	return &cfg, nil
 }
