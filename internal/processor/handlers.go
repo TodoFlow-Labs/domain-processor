@@ -37,7 +37,7 @@ func NewProcessor(js nats.JetStreamContext, db DBExecutor, logger logging.Logger
 
 func (p *Processor) HandleCreate(cmd dto.CreateTodoCommand) {
 	r := p.db.QueryRow(context.Background(),
-		`INSERT INTO todos.todo (user_id, title, description, due_date, priority, tags)
+		`INSERT INTO todo (user_id, title, description, due_date, priority, tags)
 		 VALUES ($1, $2, $3, $4, $5, $6)
 		 RETURNING id, created_at`,
 		cmd.UserID, cmd.Title, cmd.Description, cmd.DueDate, cmd.Priority, cmd.Tags,
@@ -63,7 +63,7 @@ func (p *Processor) HandleCreate(cmd dto.CreateTodoCommand) {
 
 func (p *Processor) HandleUpdate(cmd dto.UpdateTodoCommand) {
 	_, err := p.db.Exec(context.Background(), `
-		UPDATE todos.todo
+		UPDATE todo
 		SET
 			title = COALESCE($1, title),
 			description = COALESCE($2, description),
@@ -100,7 +100,7 @@ func (p *Processor) HandleUpdate(cmd dto.UpdateTodoCommand) {
 
 func (p *Processor) HandleDelete(cmd dto.DeleteTodoCommand) {
 	_, err := p.db.Exec(context.Background(),
-		`DELETE FROM todos.todo WHERE id = $1 AND user_id = $2`, cmd.ID, cmd.UserID,
+		`DELETE FROM todo WHERE id = $1 AND user_id = $2`, cmd.ID, cmd.UserID,
 	)
 	if err != nil {
 		p.logger.Error().Err(err).Msg("db delete failed")
