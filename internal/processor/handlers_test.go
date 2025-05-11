@@ -1,8 +1,8 @@
-// internal/processor/handler_test.go
 package processor_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -21,13 +21,11 @@ type mockDB struct {
 }
 
 func (m *mockDB) Exec(ctx context.Context, query string, args ...any) (any, error) {
-	argsList := m.Called(ctx, query, args)
-	return argsList.Get(0), argsList.Error(1)
+	return m.Called(ctx, query, args).Get(0), m.Called(ctx, query, args).Error(1)
 }
 
 func (m *mockDB) QueryRow(ctx context.Context, query string, args ...any) processor.RowScanner {
-	argsList := m.Called(ctx, query, args)
-	return argsList.Get(0).(processor.RowScanner)
+	return m.Called(ctx, query, args).Get(0).(processor.RowScanner)
 }
 
 type mockRow struct {
@@ -37,15 +35,18 @@ type mockRow struct {
 func (r *mockRow) Scan(dest ...any) error {
 	args := r.Called(dest)
 	if len(dest) == 2 {
-		idPtr := dest[0].(*string)
-		tsPtr := dest[1].(*time.Time)
-		*idPtr = "todo-id"
-		*tsPtr = time.Now()
+		if id, ok := dest[0].(*string); ok {
+			*id = "todo-id"
+		}
+		if ts, ok := dest[1].(*time.Time); ok {
+			*ts = time.Now()
+		}
 	}
 	return args.Error(0)
 }
 
 func setupEmbeddedNATSServer(t *testing.T) (*server.Server, nats.JetStreamContext, *nats.Conn) {
+	t.Helper()
 	opts := &server.Options{
 		JetStream: true,
 		StoreDir:  t.TempDir(),
@@ -76,32 +77,6 @@ func setupEmbeddedNATSServer(t *testing.T) (*server.Server, nats.JetStreamContex
 	return srv, js, nc
 }
 
-func TestHandleUpdate_Success(t *testing.T) {
-	db := new(mockDB)
-	logger := logging.New("debug")
-	srv, js, nc := setupEmbeddedNATSServer(t)
-	defer srv.Shutdown()
-	defer nc.Close()
-
-	db.On("Exec", mock.Anything, mock.AnythingOfType("string"), mock.Anything).
-		Return(nil, nil)
-
-	h := processor.NewProcessor(js, db, logger)
-	title := "Updated Title"
-	completed := true
-	cmd := dto.UpdateTodoCommand{
-		BaseCommand: dto.BaseCommand{
-			ID: "todo-id",
-		},
-		Title:     &title,
-		Completed: &completed,
-	}
-
-	h.HandleUpdate(cmd)
-
-	db.AssertExpectations(t)
-}
-
 func TestHandleCreate_Success(t *testing.T) {
 	db := new(mockDB)
 	row := new(mockRow)
@@ -110,18 +85,70 @@ func TestHandleCreate_Success(t *testing.T) {
 	defer srv.Shutdown()
 	defer nc.Close()
 
-	db.On("QueryRow", mock.Anything, mock.AnythingOfType("string"), mock.Anything).
-		Return(row)
-	row.On("Scan", mock.Anything).
-		Return(nil)
+	db.On("QueryRow", mock.Anything, mock.AnythingOfType("string"), mock.Anything).Return(row)
+	row.On("Scan", mock.Anything).Return(nil)
 
 	h := processor.NewProcessor(js, db, logger)
-	cmd := dto.CreateTodoCommand{Title: "test todo"}
+	cmd := dto.CreateTodoCommand{
+		BaseCommand: dto.BaseCommand{UserID: "user-1"},
+		Title:       "test todo",
+	}
 
 	h.HandleCreate(cmd)
 
+	// Assert message published
+	sub, err := js.PullSubscribe("todo.events", "test-create")
+	assert.NoError(t, err)
+	msgs, err := sub.Fetch(1, nats.MaxWait(time.Second))
+	assert.NoError(t, err)
+	assert.Len(t, msgs, 1)
+
+	var evt dto.TodoCreatedEvent
+	err = json.Unmarshal(msgs[0].Data, &evt)
+	assert.NoError(t, err)
+	assert.Equal(t, cmd.Title, evt.Title)
+	assert.Equal(t, cmd.UserID, evt.UserID)
+
 	db.AssertExpectations(t)
 	row.AssertExpectations(t)
+}
+
+func TestHandleUpdate_Success(t *testing.T) {
+	db := new(mockDB)
+	logger := logging.New("debug")
+	srv, js, nc := setupEmbeddedNATSServer(t)
+	defer srv.Shutdown()
+	defer nc.Close()
+
+	db.On("Exec", mock.Anything, mock.AnythingOfType("string"), mock.Anything).Return(nil, nil)
+
+	h := processor.NewProcessor(js, db, logger)
+	title := "Updated Title"
+	completed := true
+	cmd := dto.UpdateTodoCommand{
+		BaseCommand: dto.BaseCommand{
+			ID:     "todo-id",
+			UserID: "user-1",
+		},
+		Title:     &title,
+		Completed: &completed,
+	}
+
+	h.HandleUpdate(cmd)
+
+	sub, err := js.PullSubscribe("todo.events", "test-update")
+	assert.NoError(t, err)
+	msgs, err := sub.Fetch(1, nats.MaxWait(time.Second))
+	assert.NoError(t, err)
+	assert.Len(t, msgs, 1)
+
+	var evt dto.TodoUpdatedEvent
+	err = json.Unmarshal(msgs[0].Data, &evt)
+	assert.NoError(t, err)
+	assert.Equal(t, cmd.ID, evt.ID)
+	assert.Equal(t, cmd.UserID, evt.UserID)
+
+	db.AssertExpectations(t)
 }
 
 func TestHandleDelete_Success(t *testing.T) {
@@ -131,17 +158,29 @@ func TestHandleDelete_Success(t *testing.T) {
 	defer srv.Shutdown()
 	defer nc.Close()
 
-	db.On("Exec", mock.Anything, mock.AnythingOfType("string"), mock.Anything).
-		Return(nil, nil)
+	db.On("Exec", mock.Anything, mock.AnythingOfType("string"), mock.Anything).Return(nil, nil)
 
 	h := processor.NewProcessor(js, db, logger)
 	cmd := dto.DeleteTodoCommand{
 		BaseCommand: dto.BaseCommand{
-			ID: "todo-id",
+			ID:     "todo-id",
+			UserID: "user-1",
 		},
 	}
 
 	h.HandleDelete(cmd)
+
+	sub, err := js.PullSubscribe("todo.events", "test-delete")
+	assert.NoError(t, err)
+	msgs, err := sub.Fetch(1, nats.MaxWait(time.Second))
+	assert.NoError(t, err)
+	assert.Len(t, msgs, 1)
+
+	var evt dto.TodoDeletedEvent
+	err = json.Unmarshal(msgs[0].Data, &evt)
+	assert.NoError(t, err)
+	assert.Equal(t, cmd.ID, evt.ID)
+	assert.Equal(t, cmd.UserID, evt.UserID)
 
 	db.AssertExpectations(t)
 }

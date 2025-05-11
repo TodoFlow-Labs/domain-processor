@@ -22,7 +22,7 @@ func Run() {
 		log.Fatal().Err(err).Msg("failed to load config")
 	}
 
-	logger := logging.New(cfg.LogLevel)
+	logger := logging.New(cfg.LogLevel).With().Str("service", "domain-processor").Logger()
 	logger.Info().Msg("domain-processor starting")
 
 	metrics.Init(cfg.MetricsAddr)
