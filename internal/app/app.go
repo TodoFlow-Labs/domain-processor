@@ -5,6 +5,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog/log"
@@ -72,10 +73,10 @@ type dbWrapper struct {
 	*pgxpool.Pool
 }
 
-func (d dbWrapper) Exec(ctx context.Context, sql string, args ...interface{}) (interface{}, error) {
+func (d dbWrapper) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 	return d.Pool.Exec(ctx, sql, args...)
 }
 
-func (d dbWrapper) QueryRow(ctx context.Context, sql string, args ...interface{}) processor.RowScanner {
+func (d dbWrapper) QueryRow(ctx context.Context, sql string, args ...any) processor.RowScanner {
 	return d.Pool.QueryRow(ctx, sql, args...)
 }

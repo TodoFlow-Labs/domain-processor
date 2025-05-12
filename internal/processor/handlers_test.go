@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/assert"
@@ -20,9 +21,9 @@ type mockDB struct {
 	mock.Mock
 }
 
-func (m *mockDB) Exec(ctx context.Context, query string, args ...any) (any, error) {
+func (m *mockDB) Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
 	callArgs := m.Called(ctx, query, args)
-	return callArgs.Get(0), callArgs.Error(1)
+	return callArgs.Get(0).(pgconn.CommandTag), callArgs.Error(1)
 }
 
 func (m *mockDB) QueryRow(ctx context.Context, query string, args ...any) processor.RowScanner {
@@ -95,7 +96,8 @@ func TestHandleCreate_Success(t *testing.T) {
 		Title:       "test todo",
 	}
 
-	h.HandleCreate(cmd)
+	err := h.HandleCreate(cmd)
+	assert.NoError(t, err)
 
 	sub, err := js.PullSubscribe("todo.events", "test-create")
 	assert.NoError(t, err)
@@ -120,7 +122,7 @@ func TestHandleUpdate_Success(t *testing.T) {
 	defer srv.Shutdown()
 	defer nc.Close()
 
-	db.On("Exec", mock.Anything, mock.AnythingOfType("string"), mock.Anything).Return(nil, nil)
+	db.On("Exec", mock.Anything, mock.AnythingOfType("string"), mock.Anything).Return(pgconn.NewCommandTag("UPDATE 1"), nil)
 
 	h := processor.NewProcessor(js, db, logger)
 	title := "Updated Title"
@@ -134,7 +136,8 @@ func TestHandleUpdate_Success(t *testing.T) {
 		Completed: &completed,
 	}
 
-	h.HandleUpdate(cmd)
+	err := h.HandleUpdate(cmd)
+	assert.NoError(t, err)
 
 	sub, err := js.PullSubscribe("todo.events", "test-update")
 	assert.NoError(t, err)
@@ -158,7 +161,8 @@ func TestHandleDelete_Success(t *testing.T) {
 	defer srv.Shutdown()
 	defer nc.Close()
 
-	db.On("Exec", mock.Anything, mock.AnythingOfType("string"), mock.Anything).Return(nil, nil)
+	db.On("Exec", mock.Anything, mock.AnythingOfType("string"), mock.Anything).
+		Return(pgconn.NewCommandTag("DELETE 1"), nil)
 
 	h := processor.NewProcessor(js, db, logger)
 	cmd := dto.DeleteTodoCommand{
@@ -168,7 +172,8 @@ func TestHandleDelete_Success(t *testing.T) {
 		},
 	}
 
-	h.HandleDelete(cmd)
+	err := h.HandleDelete(cmd)
+	assert.NoError(t, err)
 
 	sub, err := js.PullSubscribe("todo.events", "test-delete")
 	assert.NoError(t, err)

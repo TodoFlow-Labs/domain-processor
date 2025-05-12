@@ -5,19 +5,20 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/nats-io/nats.go"
 	"github.com/todoflow-labs/shared-dtos/dto"
 	"github.com/todoflow-labs/shared-dtos/logging"
 )
 
 type CommandHandler interface {
-	HandleCreate(dto.CreateTodoCommand)
-	HandleUpdate(dto.UpdateTodoCommand)
-	HandleDelete(dto.DeleteTodoCommand)
+	HandleCreate(dto.CreateTodoCommand) error
+	HandleUpdate(dto.UpdateTodoCommand) error
+	HandleDelete(dto.DeleteTodoCommand) error
 }
 
 type DBExecutor interface {
-	Exec(context.Context, string, ...any) (any, error)
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 	QueryRow(context.Context, string, ...any) RowScanner
 }
 
@@ -35,7 +36,7 @@ func NewProcessor(js nats.JetStreamContext, db DBExecutor, logger logging.Logger
 	return &Processor{js: js, db: db, logger: logger}
 }
 
-func (p *Processor) HandleCreate(cmd dto.CreateTodoCommand) {
+func (p *Processor) HandleCreate(cmd dto.CreateTodoCommand) error {
 	r := p.db.QueryRow(context.Background(),
 		`INSERT INTO todo (user_id, title, description, due_date, priority, tags)
 		 VALUES ($1, $2, $3, $4, $5, $6)
@@ -54,15 +55,26 @@ func (p *Processor) HandleCreate(cmd dto.CreateTodoCommand) {
 
 	if err := r.Scan(&evt.ID, &evt.Timestamp); err != nil {
 		p.logger.Error().Err(err).Msg("db insert failed")
-		return
+		p.logger.Error().Str("user_id", cmd.UserID).Msg("Todo creation failed")
+		evt.Type = dto.TodoCreateFailedEvt
+		if err := p.publishEvent("todo.events", evt); err != nil {
+			p.logger.Error().Err(err).Msg("failed to publish event")
+			return err
+		}
+
+		return err
 	}
 
 	p.logger.Debug().Msgf("Todo created: %s", evt.ID)
-	p.publishEvent("todo.events", evt)
+	if err := p.publishEvent("todo.events", evt); err != nil {
+		p.logger.Error().Err(err).Msg("failed to publish event")
+		return err
+	}
+	return nil
 }
 
-func (p *Processor) HandleUpdate(cmd dto.UpdateTodoCommand) {
-	_, err := p.db.Exec(context.Background(), `
+func (p *Processor) HandleUpdate(cmd dto.UpdateTodoCommand) error {
+	tag, err := p.db.Exec(context.Background(), `
 		UPDATE todo
 		SET
 			title = COALESCE($1, title),
@@ -74,10 +86,6 @@ func (p *Processor) HandleUpdate(cmd dto.UpdateTodoCommand) {
 			updated_at = now()
 		WHERE id = $7 AND user_id = $8
 	`, cmd.Title, cmd.Description, cmd.Completed, cmd.DueDate, cmd.Priority, cmd.Tags, cmd.ID, cmd.UserID)
-	if err != nil {
-		p.logger.Error().Err(err).Msg("db update failed")
-		return
-	}
 
 	evt := dto.TodoUpdatedEvent{
 		BaseEvent: dto.BaseEvent{
@@ -94,18 +102,35 @@ func (p *Processor) HandleUpdate(cmd dto.UpdateTodoCommand) {
 		Tags:        derefStringSlice(cmd.Tags),
 	}
 
+	if err != nil || tag.RowsAffected() == 0 {
+		if err != nil {
+			p.logger.Error().Err(err).Msg("db update failed")
+		} else {
+			p.logger.Warn().Str("id", cmd.ID).Msg("no todo updated (not found or no changes)")
+		}
+		evt.Type = dto.TodoUpdateFailedEvt
+		if err := p.publishEvent("todo.events", evt); err != nil {
+			p.logger.Error().Err(err).Msg("failed to publish event")
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		return nil // still soft-success if 0 rows affected
+	}
+
 	p.logger.Debug().Msgf("Todo updated: %s", evt.ID)
-	p.publishEvent("todo.events", evt)
+	if err := p.publishEvent("todo.events", evt); err != nil {
+		p.logger.Error().Err(err).Msg("failed to publish event")
+		return err
+	}
+	return nil
 }
 
-func (p *Processor) HandleDelete(cmd dto.DeleteTodoCommand) {
-	_, err := p.db.Exec(context.Background(),
+func (p *Processor) HandleDelete(cmd dto.DeleteTodoCommand) error {
+	tag, err := p.db.Exec(context.Background(),
 		`DELETE FROM todo WHERE id = $1 AND user_id = $2`, cmd.ID, cmd.UserID,
 	)
-	if err != nil {
-		p.logger.Error().Err(err).Msg("db delete failed")
-		return
-	}
 
 	evt := dto.TodoDeletedEvent{
 		BaseEvent: dto.BaseEvent{
@@ -115,20 +140,36 @@ func (p *Processor) HandleDelete(cmd dto.DeleteTodoCommand) {
 			Timestamp: time.Now(),
 		},
 	}
+	p.logger.Debug().Msgf("Todo deleted ERROR: %s", err)
+	if err != nil || tag.RowsAffected() == 0 {
+		p.logger.Error().Err(err).Msg("db delete failed")
+		evt.Type = dto.TodoDeleteFailedEvt
+		if err := p.publishEvent("todo.events", evt); err != nil {
+			p.logger.Error().Err(err).Msg("failed to publish event")
+			return err
+		}
+		return err
+	}
 
 	p.logger.Debug().Msgf("Todo deleted: %s", evt.ID)
-	p.publishEvent("todo.events", evt)
+	if err := p.publishEvent("todo.events", evt); err != nil {
+		p.logger.Error().Err(err).Msg("failed to publish event")
+		return err
+	}
+	return nil
 }
 
-func (p *Processor) publishEvent(subject string, evt any) {
+func (p *Processor) publishEvent(subject string, evt any) error {
 	data, err := json.Marshal(evt)
 	if err != nil {
 		p.logger.Error().Err(err).Msg("failed to serialize event")
-		return
+		return err
 	}
 	if _, err := p.js.Publish(subject, data); err != nil {
 		p.logger.Error().Err(err).Str("subject", subject).Msg("failed to publish event")
+		return err
 	}
+	return nil
 }
 
 func derefString(s *string) string {
