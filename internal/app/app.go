@@ -2,11 +2,8 @@
 package app
 
 import (
-	"context"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog/log"
 
@@ -28,12 +25,6 @@ func Run() {
 
 	metrics.Init(cfg.MetricsAddr)
 	logger.Debug().Msgf("metrics server listening on %s", cfg.MetricsAddr)
-
-	db, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
-	if err != nil {
-		logger.Fatal().Err(err).Msg("db connect failed")
-	}
-	defer db.Close()
 
 	nc, err := nats.Connect(cfg.NATSURL)
 	if err != nil {
@@ -61,22 +52,9 @@ func Run() {
 		logger.Debug().Msgf("stream %s ensured", stream.Name)
 	}
 
-	h := processor.NewProcessor(js, dbWrapper{db}, logger)
+	h := processor.NewProcessor(js, logger)
 	subscriber.SubscribeToCommands(js, h, logger)
 
 	logger.Info().Msg("domain-processor is running")
 	select {}
-}
-
-// --- Adapters for interfaces ---
-type dbWrapper struct {
-	*pgxpool.Pool
-}
-
-func (d dbWrapper) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-	return d.Pool.Exec(ctx, sql, args...)
-}
-
-func (d dbWrapper) QueryRow(ctx context.Context, sql string, args ...any) processor.RowScanner {
-	return d.Pool.QueryRow(ctx, sql, args...)
 }
