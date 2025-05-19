@@ -10,7 +10,6 @@ import (
 
 type Config struct {
 	NATSURL     string `mapstructure:"nats-url"`
-	DatabaseURL string `mapstructure:"database-url"`
 	LogLevel    string `mapstructure:"log-level"`
 	MetricsAddr string `mapstructure:"metrics-addr"`
 }
@@ -49,9 +48,6 @@ func Load() (*Config, error) {
 	// Validate
 	if cfg.NATSURL == "" {
 		return nil, fmt.Errorf("nats-url must be set")
-	}
-	if cfg.DatabaseURL == "" {
-		return nil, fmt.Errorf("database-url must be set")
 	}
 
 	return &cfg, nil
