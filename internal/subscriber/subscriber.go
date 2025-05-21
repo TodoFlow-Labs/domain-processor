@@ -40,6 +40,7 @@ func SubscribeToCommands(js nats.JetStreamContext, handler processor.CommandHand
 		m.Ack()
 	},
 		nats.Durable("domain-processor"),
+		nats.Bind("todo_commands", "domain-processor"),
 		nats.ManualAck(),
 		nats.AckWait(30*time.Second),
 	)
