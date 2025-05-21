@@ -60,7 +60,7 @@ func (p *Processor) HandleUpdate(cmd dto.UpdateTodoCommand) error {
 		Tags:        derefStringSlice(cmd.Tags),
 	}
 
-	p.logger.Debug().Msgf("Emitting TodoUpdatedEvent for todo %s", cmd.ID)
+	p.logger.Debug().Msgf("Emitting TodoUpdatedEvent for todo %s and user %s", cmd.ID, cmd.UserID)
 	return p.publishEvent("todo.events", evt)
 }
 
@@ -74,7 +74,7 @@ func (p *Processor) HandleDelete(cmd dto.DeleteTodoCommand) error {
 		},
 	}
 
-	p.logger.Debug().Msgf("Emitting TodoDeletedEvent for todo %s", cmd.ID)
+	p.logger.Debug().Msgf("Emitting TodoDeletedEvent for todo %s and user %s", cmd.ID, cmd.UserID)
 	return p.publishEvent("todo.events", evt)
 }
 

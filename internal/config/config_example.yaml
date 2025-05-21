@@ -1,3 +1,0 @@
-nats-url: "nats://"
-log-level: "debug"
-metrics-addr: ":9090"

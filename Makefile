@@ -1,7 +1,7 @@
 .PHONY: run fmt test update push
 
 run:
-	go run cmd/main.go --config=./internal/config/config.dev.yaml
+	go run cmd/main.go
 
 fmt:
 	go fmt ./...

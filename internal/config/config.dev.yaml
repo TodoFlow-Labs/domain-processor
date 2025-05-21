@@ -1,3 +1,0 @@
-nats-url: "nats://localhost:4222"
-log-level: "debug"
-metrics-addr: ":9090"
